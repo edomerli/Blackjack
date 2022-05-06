@@ -64,9 +64,17 @@ class Agent:
     #Hint: You can keep track the reward of states with this function as well, e.g., as one of the return values
     #Hint: After this function, you can also define another function that simulates one full trajectory, but it's optional
     def make_one_transition(self, action):
-        pass
+        if self.simulator.game_over():
+            return None
+        
+        if action == HIT:
+            self.simulator.act_hit()
+        else:
+            self.simulator.act_stand()
+        
+        return self.simulator.state
 
-    #TODO: Implement MC policy evaluation
+    # MC policy evaluation
     def MC_run(self, num_simulation, tester=False):
 
         # Perform num_simulation rounds of simulations in each cycle of the overall game loop
@@ -77,15 +85,36 @@ class Agent:
                 self.tester_print(simulation, num_simulation, "MC")
             self.simulator.reset()  # The simulator is already reset for you for each new trajectory
 
-            # TODO
-            # Note: Do not reset the simulator again in the rest of this simulation
-            # Hint: self.simulator.state gives you the current state of the trajectory
-            # Hint: Use the "make_one_transition" function to take steps in the simulator, and keep track of the states
-            # Hint: Go through game.py file and figure out which functions will be useful
-            # Make sure to update self.MC_values, self.S_MC, self.N_MC for the autograder
-            # Don't forget the DISCOUNT
+
+            # Actual simulation
+            # Keep track of the trajectory of this simulation
+            trajectory = []
+            while True:
+
+                # Add state to trajectory
+                s = self.simulator.state
+                trajectory.append(s)
+
+                # Transition
+                self.make_one_transition(self.default_policy(s))
+
+                # If reached a terminal state
+                if self.simulator.game_over():
+                    # Append it as well and store the reward
+                    trajectory.append(self.simulator.state)
+                    reward_to_go = self.simulator.check_reward()
+                    break
+
+            # Update the Values of each state in the trajectory, from the last state to the first (backtrack)
+            for s in reversed(trajectory):
+                self.S_MC[s] += reward_to_go
+                self.N_MC[s] += 1
+                self.MC_values[s] = self.S_MC[s] / self.N_MC[s]
+
+                reward_to_go *= DISCOUNT
+
     
-    #TODO: Implement TD policy evaluation
+    # TD policy evaluation
     def TD_run(self, num_simulation, tester=False):
 
         # Perform num_simulation rounds of simulations in each cycle of the overall game loop
@@ -96,16 +125,27 @@ class Agent:
                 self.tester_print(simulation, num_simulation, "TD")
             self.simulator.reset()
 
-            # TODO
-            # Note: Do not reset the simulator again in the rest of this simulation
-            # Hint: self.simulator.state gives you the current state of the trajectory
-            # Hint: Use the "make_one_transition" function to take steps in the simulator, and keep track of the states
-            # Hint: Go through game.py file and figure out which functions will be useful
-            # Hint: The learning rate alpha is given by "self.alpha(...)"
-            # Make sure to update self.TD_values and self.N_TD for the autograder
-            # Don't forget the DISCOUNT
+            # Actual simulation
+            while True:
+                # Get the 2 states in this transition
+                s1 = self.simulator.state
+                self.make_one_transition(self.default_policy(s1))
+                s2 = self.simulator.state
+
+                # Update Value of s1
+                self.N_TD[s1] += 1
+                k1 = self.N_TD[s1]
+                self.TD_values[s1] = self.TD_values[s1] + self.alpha(k1) * (DISCOUNT * self.TD_values[s2] - self.TD_values[s1])
+
+                # If s2 is a terminal state, update its Value as well
+                if self.simulator.game_over():
+                    self.N_TD[s2] += 1
+                    k2 = self.N_TD[s2]
+                    self.TD_values[s2] = self.TD_values[s2] + self.alpha(k2) * (self.simulator.check_reward() - self.TD_values[s2])
+                    break
+
                 
-    #TODO: Implement Q-learning
+    # Q-learning
     def Q_run(self, num_simulation, tester=False, epsilon=0.4):
 
         # Perform num_simulation rounds of simulations in each cycle of the overall game loop
@@ -127,10 +167,35 @@ class Agent:
             # Make sure to update self.Q_values, self.N_Q for the autograder
             # Don't forget the DISCOUNT
 
-    #TODO: Implement epsilon-greedy policy
+            while True:
+                s1 = self.simulator.state
+                a1 = self.pick_action(s1, epsilon)
+
+                self.make_one_transition(a1)
+
+                s2 = self.simulator.state
+
+                self.N_Q[s1][a1] += 1
+                k1 = self.N_Q[s1][a1]
+                self.Q_values[s1][a1] = self.Q_values[s1][a1] + self.alpha(k1) * (DISCOUNT * max(self.Q_values[s2]) - self.Q_values[s1][a1])            
+
+                if self.simulator.game_over():
+                    self.N_Q[s2][0] += 1
+                    self.N_Q[s2][1] += 1
+                    k2 = self.N_Q[s2][0]
+
+                    reward = self.simulator.check_reward()
+                    updated_Q = self.Q_values[s2][0] + self.alpha(k2) * (reward - self.Q_values[s2][0])
+                    self.Q_values[s2] = [updated_Q, updated_Q]
+                    break
+
+
+    # Epsilon-greedy policy
     def pick_action(self, s, epsilon):
-        # TODO: Replace the following random value with an action following the epsilon-greedy strategy
-        return random.randint(0, 1)
+        if random.random() <= epsilon:
+            return random.randint(0, 1)
+        else:
+            return self.autoplay_decision(s)
 
     ####Do not modify anything below this line####
 
